@@ -134,6 +134,7 @@ const service='https://painel-programadas-loja.opencord2.chatgpt.site';
 let sessionToken=sessionStorage.getItem('painel.sessao')||'';
 let panelId='', ownId='';
 function gate(mode,message=''){
+ if(window.GondolaAndroid?.ready)window.GondolaAndroid.ready();
  document.body.dataset.screen=mode;
  el('authNotice').textContent=message;
  if(mode!=='app'){
@@ -141,12 +142,18 @@ function gate(mode,message=''){
   el('importFeedback').textContent='Importe o PDF de etiquetas da loja.';
  }
 }
+async function timedFetch(url,options={}){
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),15000);
+ try{return await fetch(url,{...options,signal:controller.signal})}
+ finally{clearTimeout(timeout)}
+}
 async function api(path,body){
  const options={cache:'no-store',headers:{'X-Painel-Version':String(webVersion)}};
  if(sessionToken)options.headers.Authorization='Bearer '+sessionToken;
  if(panelId)options.headers['X-Painel-Loja']=panelId;
  if(body){options.method='POST';options.headers['Content-Type']='application/json';options.body=JSON.stringify(body)}
- const response=await fetch(service+'/api/'+path,options), result=await response.json();
+ const response=await timedFetch(service+'/api/'+path,options), result=await response.json();
  if(response.status===426)gate('update');
  if(response.status===401&&signed){signed=false;savedOffers=[];gate('login','Entre novamente para continuar.')}
  if(!response.ok)throw Error(result.error||'Não foi possível concluir.');
@@ -182,7 +189,7 @@ function mustUpdate(info){
  return info.web!==webVersion||(mobile&&mobile<info.android);
 }
 async function verify(){
- const response=await fetch(service+'/versao',{cache:'no-store'});
+ const response=await timedFetch(service+'/versao',{cache:'no-store'});
  if(!response.ok)throw Error('Servidor indisponível.');
  const info=await response.json();storeDate=info.today;
  if(mustUpdate(info)){gate('update');return false}return true;
@@ -365,9 +372,10 @@ el('signOut').onclick=async()=>{
 };
 el('updateNow').onclick=async()=>{
  try{
-  const info=await (await fetch(service+'/versao',{cache:'no-store'})).json();
+  const info=await (await timedFetch(service+'/versao',{cache:'no-store'})).json();
   const mobile=Number(navigator.userAgent.match(/LojaAndroid\/(\d+)/)?.[1]||0);
   if(mobile&&mobile<info.android&&window.GondolaAndroid){GondolaAndroid.updateApp();return}
+  if(window.GondolaAndroid?.refreshInterface){window.GondolaAndroid.refreshInterface();return}
   location.reload();
  }catch{el('updateNote').textContent='Confira sua conexão e tente novamente.'}
 };
