@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:5,android:5};
+const version={web:6,android:5};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
@@ -82,6 +82,11 @@ async function run(req,env){
  }
  const owner=req.headers.get("X-Painel-Loja")||user.id;
  if(!await db.prepare("SELECT 1 AS ok FROM members WHERE owner=? AND uid=?").bind(owner,user.id).first())return fail(403,"Este painel não está disponível para sua conta.");
+ if(path==="/api/limpar-programadas"&&req.method==="POST"){
+  if(input.confirmation!=="APAGAR")return fail(400,"Digite APAGAR para confirmar.");
+  const result=await db.prepare("DELETE FROM offers WHERE owner=?").bind(owner).run();
+  return send({removed:result.meta.changes,today:today()});
+ }
  if(path==="/api/ofertas"&&["GET","POST"].includes(req.method)){
   const day=today();
   await db.prepare("DELETE FROM offers WHERE end<?").bind(day).run();
