@@ -22,7 +22,7 @@ function readLabel(tokens){
   model:/VENCIMENTO\s+EM/i.test(text)?'Markdown':'Fidelizado'
  };
 }
-function pageOffers(tokens,page){
+function pageOffers(tokens,page,knownColumns=""){
  const fidelity=tokens.some(t=>/^DESCONTO$/i.test(t.s));
  const anchors=tokens.filter(t=>fidelity?/^DESCONTO$/i.test(t.s):/^DE\s*:$/.test(t.s));
  const bands=[];
@@ -32,13 +32,15 @@ function pageOffers(tokens,page){
   band.labels.push(t);
  }
  if(!bands.length)return [{page,note:'Formato não reconhecido. Confira esta página manualmente.'}];
+ const maxColumns=Math.max(...bands.map(b=>b.labels.length));
+ const columns=[3,4].includes(maxColumns)?String(maxColumns):knownColumns;
  const offers=[], inset=fidelity?4:30;
  bands.forEach((band,row)=>{
   const cols=band.labels.sort((a,b)=>a.x-b.x);
   cols.forEach((anchor,col)=>{
    const cell=tokens.filter(t=>t.y>=band.y-inset&&t.y<(bands[row+1]?.y??Infinity)-inset
      &&t.x>=(col===0?-Infinity:anchor.x-3)&&t.x<(cols[col+1]?.x??Infinity)-3);
-   offers.push({...readLabel(cell),page,note:'Linha '+(row+1)+' · etiqueta '+(col+1)+' de '+cols.length});
+   offers.push({...readLabel(cell),columns,page,note:'Linha '+(row+1)+' · etiqueta '+(col+1)+' de '+cols.length});
   });
  });
  return offers;
@@ -47,10 +49,10 @@ function groupCopies(records){
  const unique=new Map();
  for(const offer of records){
   // Unrecognized/incomplete labels stay separate for manual review.
-  const key=offer.ean&&offer.end?JSON.stringify([offer.ean,offer.start,offer.end,offer.price,offer.original,offer.condition,offer.notes,offer.band]):Symbol();
+  const key=offer.ean&&offer.end?JSON.stringify([offer.model,offer.ean,offer.start,offer.end,offer.price,offer.original,offer.condition,offer.notes,offer.band]):Symbol();
   const found=unique.get(key);
-  if(found){found.copies++;found.pages.add(String(offer.page));if(offer.name.length>found.name.length)found.name=offer.name}
-  else unique.set(key,{...offer,copies:1,pages:new Set([String(offer.page)])});
+  if(found){found.copies++;found.pages.add(String(offer.page));found.formats.add(offer.columns||"");if(offer.name.length>found.name.length)found.name=offer.name}
+  else unique.set(key,{...offer,copies:1,pages:new Set([String(offer.page)]),formats:new Set([offer.columns||""])});
  }
- return [...unique.values()].map(({pages,...offer})=>({...offer,page:[...pages].join(', '),note:(offer.model||'Conferência manual')+' · '+offer.copies+' etiqueta(s)'}));
+ return [...unique.values()].map(({pages,formats,...offer})=>({...offer,columns:[...formats].filter(Boolean).sort().join(", "),page:[...pages].join(', '),note:(offer.model||'Conferência manual')+' · '+offer.copies+' etiqueta(s)'}));
 }
