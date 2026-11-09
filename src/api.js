@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:6,android:6};
+const version={web:7,android:6};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
@@ -24,6 +24,11 @@ function clean(row){
  if(data.ean&&!/^\d{8,14}$/.test(data.ean))throw new Error("EAN inválido.");
  return data;
 }
+const usernameKey=value=>String(value||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('pt-BR');
+async function findUser(db,value){
+ const login=usernameKey(value);
+ return db.prepare("SELECT * FROM users WHERE username=? OR (username IS NULL AND lower(name)=?) OR (email=? AND email LIKE '%@%')").bind(login,login,login).first();
+}
 async function run(req,env){
  const url=new URL(req.url),path=url.pathname,db=env.DB;
  if(path==="/app.apk")return new Response(Uint8Array.from(atob(APK),c=>c.charCodeAt(0)),{headers:{"content-type":"application/vnd.android.package-archive","content-disposition":"attachment; filename=Painel-da-loja.apk"}});
@@ -42,8 +47,8 @@ async function run(req,env){
  }
  const now=Math.floor(Date.now()/1000);
  if(req.method==="POST"&&["/api/cadastrar","/api/entrar"].includes(path)){
-  const email=String(input.email||"").trim().toLowerCase(),pw=input.password;
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254||typeof pw!=="string"||pw.length>256)return fail(400,"Confira o e-mail e a senha.");
+  const login=String(input.username||input.email||'').trim(),pw=input.password;
+  if(!login||login.length>254||typeof pw!=="string"||pw.length>256)return fail(400,"Confira o usuário e a senha.");
   const ip=req.headers.get("cf-connecting-ip")||"local";
   const bucket=await digest(ip+":"+Math.floor(now/600));
   await db.prepare("DELETE FROM attempts WHERE expires<?").bind(now).run();
@@ -51,33 +56,34 @@ async function run(req,env){
   if(limit.count>40)return fail(429,"Aguarde alguns minutos para tentar novamente.");
   let user;
   if(path.endsWith("cadastrar")){
-   const name=String(input.name||"").trim();
-   if(!name||name.length>80||pw.length<8)return fail(400,"Informe seu nome e use pelo menos oito caracteres na senha.");
+   const name=login.normalize('NFKC').replace(/\s+/g,' '),username=usernameKey(name);
+   if(!/^[\p{L}\p{N}][\p{L}\p{N} ._-]{2,39}$/u.test(name)||pw.length<8)return fail(400,"Use um usuário de 3 a 40 caracteres e uma senha com pelo menos 8.");
+   if(await findUser(db,username))return fail(409,"Este usuário já está em uso.");
    const id=crypto.randomUUID(),salt=random(),hash=await passwordHash(pw,salt);
-   try{await db.batch([db.prepare("INSERT INTO users VALUES(?,?,?,?,?)").bind(id,email,name,salt,hash),db.prepare("INSERT INTO members VALUES(?,?)").bind(id,id)])}
-   catch(e){if(String(e).includes("UNIQUE"))return fail(409,"Este e-mail já tem uma conta. Entre com sua senha.");throw e;}
-   user={id,email,name};
+   try{await db.batch([db.prepare("INSERT INTO users (id,email,name,salt,password,username) VALUES(?,?,?,?,?,?)").bind(id,"account:"+id,name,salt,hash,username),db.prepare("INSERT INTO members VALUES(?,?)").bind(id,id)])}
+   catch(e){if(String(e).includes("UNIQUE"))return fail(409,"Este usuário já está em uso.");throw e;}
+   user={id,name,username};
   }else{
-   user=await db.prepare("SELECT * FROM users WHERE email=?").bind(email).first();
+   user=await findUser(db,login);
    const hash=await passwordHash(pw,user?.salt||"0".repeat(64));
-   if(!user||hash!==user.password)return fail(401,"E-mail ou senha incorretos.");
+   if(!user||hash!==user.password)return fail(401,"Usuário ou senha incorretos.");
   }
   const token=random();await db.batch([db.prepare("DELETE FROM sessions WHERE expires<?").bind(now),db.prepare("INSERT INTO sessions VALUES(?,?,?)").bind(await digest(token),user.id,now+604800)]);
-  return send({email:user.email,name:user.name,...(req.headers.get("origin")==="https://kyrexn.github.io"?{token}: {})},200,{"set-cookie":cookie(token,604800)});
+  return send({username:user.username||user.name,name:user.name,...(req.headers.get("origin")==="https://kyrexn.github.io"?{token}: {})},200,{"set-cookie":cookie(token,604800)});
  }
  const token=req.headers.get("authorization")?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]||req.headers.get("cookie")?.match(/(?:^|;\s*)painel=([a-f0-9]{64})(?:;|$)/)?.[1];
  if(!token)return fail(401,"Entre com sua conta.");
  const hashed=await digest(token);
- const user=await db.prepare("SELECT u.id,u.name,u.email FROM sessions s JOIN users u ON u.id=s.uid WHERE s.hash=? AND s.expires>?").bind(hashed,now).first();
+ const user=await db.prepare("SELECT u.id,u.name,u.username FROM sessions s JOIN users u ON u.id=s.uid WHERE s.hash=? AND s.expires>?").bind(hashed,now).first();
  if(!user)return fail(401,"Entre com sua conta.");
  if(path==="/api/sessao"&&req.method==="GET")return send(user);
  if(path==="/api/sair"&&req.method==="POST"){await db.prepare("DELETE FROM sessions WHERE hash=?").bind(hashed).run();return send({},200,{"set-cookie":cookie("",0)})}
  if(path==="/api/paineis"&&req.method==="GET"){
-  const {results}=await db.prepare("SELECT u.id,u.name,u.email FROM members m JOIN users u ON u.id=m.owner WHERE m.uid=? ORDER BY u.name").bind(user.id).all();return send({own:user.id,items:results});
+  const {results}=await db.prepare("SELECT u.id,u.name,u.username FROM members m JOIN users u ON u.id=m.owner WHERE m.uid=? ORDER BY u.name").bind(user.id).all();return send({own:user.id,items:results});
  }
  if(path==="/api/equipe"&&req.method==="POST"){
-  const colleague=await db.prepare("SELECT id FROM users WHERE email=?").bind(String(input.email||"").trim().toLowerCase()).first();
-  if(!colleague)return fail(404,"Esse e-mail precisa ter uma conta cadastrada.");
+  const colleague=await findUser(db,input.username||input.email);
+  if(!colleague)return fail(404,"Esse usuário precisa ter uma conta cadastrada.");
   await db.prepare("INSERT OR IGNORE INTO members VALUES(?,?)").bind(user.id,colleague.id).run();return send({});
  }
  const owner=req.headers.get("X-Painel-Loja")||user.id;
