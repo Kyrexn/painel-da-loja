@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:2,android:3};
+const version={web:3,android:3};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
@@ -14,7 +14,7 @@ const cookie=(value,age)=>"painel="+value+"; Path=/; HttpOnly; Secure; SameSite=
 function clean(row){
  if(!row||typeof row!=="object")throw new Error("Linha inválida.");
  const data={};
- for(const [key,max] of Object.entries({name:400,ean:14,price:20,original:20,condition:160,notes:500,end:10,start:10,printed:10,source:300,page:8})){
+ for(const [key,max] of Object.entries({name:400,ean:14,price:20,original:20,condition:160,notes:500,model:30,band:10,location:50,end:10,start:10,printed:10,source:300,page:160})){
   const v=row[key]??"";if(typeof v!=="string"||v.length>max)throw new Error("Confira "+key+".");data[key]=v.trim();
  }
  if(!data.name||!/^\d{4}-\d{2}-\d{2}$/.test(data.end)||new Date(data.end+"T12:00Z").toISOString().slice(0,10)!==data.end)throw new Error("Informe produto e data válida.");
@@ -91,7 +91,7 @@ async function run(req,env){
    if(!rows.length)return fail(400,"Essas promoções já terminaram.");
    const stmts=[];for(let i=0;i<rows.length;i+=20){
     const chunk=rows.slice(i,i+20);
-    stmts.push(db.prepare("INSERT OR REPLACE INTO offers VALUES "+chunk.map(()=>"(?,?,?,?)").join(",")).bind(...chunk.flatMap(r=>[owner,JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price,...(r.condition?[r.condition]:[])]),r.end,JSON.stringify(r)])));
+    stmts.push(db.prepare("INSERT OR REPLACE INTO offers VALUES "+chunk.map(()=>"(?,?,?,?)").join(",")).bind(...chunk.flatMap(r=>[owner,JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price,...(r.condition?[r.condition]:[]),...(r.band?[r.band]:[])]),r.end,JSON.stringify(r)])));
    }await db.batch(stmts);
   }
   const {results}=await db.prepare("SELECT data FROM offers WHERE owner=? AND end>=? ORDER BY end,id").bind(owner,day).all();
