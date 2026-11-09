@@ -23,7 +23,7 @@ import java.util.Locale;
 import javax.net.ssl.*;
 
 public final class MainActivity extends Activity {
-    private static final String origin="https://kyrexn.github.io/painel-da-loja";
+    private static final String origin="https://painel-programadas-loja.opencord2.chatgpt.site";
     private WebView browser;
     private ValueCallback<Uri[]> pending;
     private boolean updating;
@@ -36,6 +36,10 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);getWindow().setStatusBarColor(dark);
         version=getApplicationInfoVersion();
+        if(!origin.equals(getPreferences(0).getString("interfaceOrigin",""))){
+            new File(getFilesDir(),"interface.html").delete();
+            getPreferences(0).edit().putString("interfaceOrigin",origin).apply();
+        }
         open();
     }
     private int getApplicationInfoVersion(){
@@ -53,7 +57,7 @@ public final class MainActivity extends Activity {
     }
     private boolean sameOrigin(String raw){
         Uri uri=Uri.parse(raw);
-        return "https".equals(uri.getScheme()) && "kyrexn.github.io".equals(uri.getHost()) && ("/painel-da-loja/".equals(uri.getPath()) || uri.getPath().startsWith("/painel-da-loja/"));
+        return "https".equals(uri.getScheme()) && "painel-programadas-loja.opencord2.chatgpt.site".equals(uri.getHost());
     }
     private void open(){
         final long request=++loadId;
@@ -66,12 +70,13 @@ public final class MainActivity extends Activity {
         loader.addView(loadingText);loader.addView(progress);
         root.addView(loader);root.addView(view,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
         view.setBackgroundColor(dark);view.getSettings().setJavaScriptEnabled(true);
+        WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0);
         view.getSettings().setAllowFileAccess(false);
         view.getSettings().setDomStorageEnabled(true);
         view.getSettings().setUserAgentString(view.getSettings().getUserAgentString()+" LojaAndroid/"+version);
         view.setWebViewClient(new WebViewClient(){
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest r){
-                if(r.isForMainFrame()&&sameOrigin(r.getUrl().toString())&&"/painel-da-loja/".equals(r.getUrl().getPath())){
+                if(r.isForMainFrame()&&sameOrigin(r.getUrl().toString())&&"/".equals(r.getUrl().getPath())){
                     try{
                         File cached=new File(getFilesDir(),"interface.html");
                         InputStream html=cached.exists()?new FileInputStream(cached):getAssets().open("index.html");
@@ -126,7 +131,7 @@ public final class MainActivity extends Activity {
             if(browser==null||!sameOrigin(browser.getUrl()))return;
             final WebView current=browser;loader.setVisibility(View.VISIBLE);loadingText.setText("Atualizando o painel…");
             new Thread(()->{
-                try{cacheInterface();runOnUiThread(()->{if(current==browser)current.reload();});}
+                try{cacheInterface();runOnUiThread(()->{if(current==browser){current.clearCache(true);current.loadUrl(origin+"/?interface="+System.currentTimeMillis());}});}
                 catch(Exception error){runOnUiThread(()->{if(current==browser){loader.setVisibility(View.GONE);Toast.makeText(MainActivity.this,"Confira sua conexão e tente novamente.",Toast.LENGTH_LONG).show();}});}
             }).start();
         });}
@@ -164,7 +169,7 @@ public final class MainActivity extends Activity {
         new Thread(()->{
             HttpsURLConnection connection=null;
             try{
-                URL url=new URL(origin+"/Painel-da-loja.apk?fresh="+System.currentTimeMillis());
+                URL url=new URL(origin+"/app.apk?fresh="+System.currentTimeMillis());
                 connection=(HttpsURLConnection)url.openConnection();connection.setConnectTimeout(10000);connection.setReadTimeout(30000);
                 connection.setInstanceFollowRedirects(false);
 
