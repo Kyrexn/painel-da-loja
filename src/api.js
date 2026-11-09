@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:7,android:6};
+const version={web:8,android:6};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
@@ -86,11 +86,10 @@ async function run(req,env){
   if(!colleague)return fail(404,"Esse usuário precisa ter uma conta cadastrada.");
   await db.prepare("INSERT OR IGNORE INTO members VALUES(?,?)").bind(user.id,colleague.id).run();return send({});
  }
- const owner=req.headers.get("X-Painel-Loja")||user.id;
- if(!await db.prepare("SELECT 1 AS ok FROM members WHERE owner=? AND uid=?").bind(owner,user.id).first())return fail(403,"Este painel não está disponível para sua conta.");
+ const owner="compartilhado";
  if(path==="/api/limpar-programadas"&&req.method==="POST"){
   if(input.confirmation!=="APAGAR")return fail(400,"Digite APAGAR para confirmar.");
-  const result=await db.prepare("DELETE FROM offers WHERE owner=?").bind(owner).run();
+  const result=await db.prepare("DELETE FROM offers").run();
   return send({removed:result.meta.changes,today:today()});
  }
  if(path==="/api/ofertas"&&["GET","POST"].includes(req.method)){
@@ -102,11 +101,14 @@ async function run(req,env){
    if(!rows.length)return fail(400,"Essas promoções já terminaram.");
    const stmts=[];for(let i=0;i<rows.length;i+=20){
     const chunk=rows.slice(i,i+20);
+    const ids=chunk.map(r=>JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price,...(r.condition?[r.condition]:[]),...(r.band?[r.band]:[]),...(r.model?[r.model]:[])]));
+    stmts.push(db.prepare("DELETE FROM offers WHERE id IN ("+chunk.map(()=>"?").join(",")+")").bind(...ids));
     stmts.push(db.prepare("INSERT OR REPLACE INTO offers VALUES "+chunk.map(()=>"(?,?,?,?)").join(",")).bind(...chunk.flatMap(r=>[owner,JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price,...(r.condition?[r.condition]:[]),...(r.band?[r.band]:[]),...(r.model?[r.model]:[])]),r.end,JSON.stringify(r)])));
    }await db.batch(stmts);
   }
-  const {results}=await db.prepare("SELECT data FROM offers WHERE owner=? AND end>=? ORDER BY end,id").bind(owner,day).all();
-  return send({rows:results.map(r=>JSON.parse(r.data)),today:day});
+  const {results}=await db.prepare("SELECT id,data FROM offers WHERE end>=? ORDER BY end,id").bind(day).all();
+  const unique=new Map(results.map(r=>[r.id,JSON.parse(r.data)]));
+  return send({rows:[...unique.values()],today:day});
  }
  return fail(404,"Não encontrado.");
 }

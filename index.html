@@ -31,12 +31,12 @@
 <p role="status" id="authNotice"></p></div>
 <div class="entryCard updating"><h1>Atualização disponível</h1><p id="updateNote">Atualize para continuar.</p><button id="updateNow">Atualizar agora</button></div>
 <div class="entryCard offline"><h1>Conexão interrompida</h1><p>Confira sua conexão com a internet.</p><button id="retryConnection">Tentar novamente</button></div></section>
-<main class="wrap"><div class="wsBar"><label>Painel <select id="workspace" aria-label="Escolher painel"></select></label><div class="panelActions"><button id="teamOpen">Equipe</button><button id="resetOpen">Limpar Programadas</button></div></div><div class="importBar"><div><strong>Programadas</strong><p id="importFeedback" role="status">Importe o PDF de etiquetas da loja.</p></div><button id="openImport" type="button">＋ Adicionar Programada</button></div><div class="hero"><div><h1>Vencimentos</h1><p>Promoções por data de término.</p></div><div class="shelf" aria-label="Etiqueta da data selecionada">
+<main class="wrap"><div class="wsBar"><div class="panelActions"><button id="resetOpen">Limpar Programadas</button></div></div><div class="importBar"><div><strong>Programadas</strong><p id="importFeedback" role="status">Importe o PDF de etiquetas da loja.</p></div><button id="openImport" type="button">＋ Adicionar Programada</button></div><div class="hero"><div><h1>Vencimentos</h1><p>Promoções por data de término.</p></div><div class="shelf" aria-label="Etiqueta da data selecionada">
 <strong class="ticket-title">VENCIMENTOS</strong>
 <div class="ticket-base"><div class="barcode" aria-hidden="true"></div><div><small>VÁLIDO ATÉ</small><b id="stamp"></b></div></div></div></div>
 <section class="calendar" aria-label="Calendário"><div class="bar"><h2 id="month">Calendário</h2><div class="controls"><button id="today">Hoje</button><input type="date" id="date" aria-label="Escolher data de término"></div></div><div class="days" id="days"></div><div class="agenda"><span>Datas com promoções</span><div id="dates"></div></div></section>
 <section class="results" aria-live="polite"><div class="listhead"><div><h2 id="title"></h2><p id="count"></p></div><button class="print" id="print">Imprimir lista</button></div><div class="columns"><span>Produto</span><span>Preço promo.</span></div><div id="list"></div></section></main>
-<dialog id="resetDialog" aria-labelledby="resetTitle"><h2 id="resetTitle">Limpar Programadas</h2><p>Todos os produtos e promoções importados neste painel serão excluídos. Sua conta de acesso será mantida.</p><form id="resetForm"><label>Digite APAGAR para confirmar<input id="resetConfirmation" required pattern="APAGAR" autocomplete="off" autocapitalize="characters"></label><p id="resetNotice" role="status"></p><div class="panelActions"><button type="button" id="resetCancel">Cancelar</button><button id="resetSubmit">Apagar Programadas</button></div></form></dialog><dialog id="team"><h2>Equipe do painel</h2><form id="teamForm"><label>Compartilhar meu painel com uma conta cadastrada<input type="text" required id="teamUsername" placeholder="Usuário do colega"></label><button>Compartilhar</button></form><p id="teamMsg" role="status"></p><button id="teamClose">Fechar</button></dialog><dialog id="importDialog" aria-labelledby="importTitle"><div class="importHead"><h2 id="importTitle">Adicionar Programada</h2><button id="closeImport" aria-label="Fechar">Fechar</button></div>
+<dialog id="resetDialog" aria-labelledby="resetTitle"><h2 id="resetTitle">Limpar Programadas</h2><p>Todos os produtos e promoções importados compartilhados serão excluídos para todas as contas. Sua conta de acesso será mantida.</p><form id="resetForm"><label>Digite APAGAR para confirmar<input id="resetConfirmation" required pattern="APAGAR" autocomplete="off" autocapitalize="characters"></label><p id="resetNotice" role="status"></p><div class="panelActions"><button type="button" id="resetCancel">Cancelar</button><button id="resetSubmit">Apagar Programadas</button></div></form></dialog><dialog id="team"><h2>Equipe do painel</h2><form id="teamForm"><label>Compartilhar meu painel com uma conta cadastrada<input type="text" required id="teamUsername" placeholder="Usuário do colega"></label><button>Compartilhar</button></form><p id="teamMsg" role="status"></p><button id="teamClose">Fechar</button></dialog><dialog id="importDialog" aria-labelledby="importTitle"><div class="importHead"><h2 id="importTitle">Adicionar Programada</h2><button id="closeImport" aria-label="Fechar">Fechar</button></div>
 <label class="fileLabel">Selecionar PDF da loja<input id="pdfFile" type="file" accept="application/pdf,.pdf"></label>
 <p class="storageNote">Confira os produtos e o término de cada promoção. A equipe poderá consultar as ofertas depois que você salvar.</p>
 <p id="readStatus" role="status">Escolha o PDF para começar.</p><form id="reviewForm"><div id="reviewRows"></div>
@@ -132,7 +132,7 @@ el('print').onclick=()=>window.GondolaAndroid?window.GondolaAndroid.printList():
 let dataRevision=0, resetInProgress=false;
 let savedOffers=[], storeDate=localKey(new Date()), signed=false;
 const preview=el('reviewRows');
-const webVersion=7;
+const webVersion=8;
 const service='https://painel-programadas-loja.opencord2.chatgpt.site';
 let sessionToken=sessionStorage.getItem('painel.sessao')||'';
 let panelId='', ownId='';
@@ -169,11 +169,6 @@ async function syncOffers(rows=[]){
 }
 function setMode(mode,day){selectDay(day||storeDate)}
 async function activate(email,name){
- const panels=await api('paineis');ownId=panels.own;
- const last=localStorage.getItem('painel.ativo');
- panelId=panels.items.some(i=>i.id===last)?last:ownId;
- el('workspace').replaceChildren(...panels.items.map(i=>new Option(i.id===ownId?'Meu painel':'Painel de '+i.name,i.id)));
- el('workspace').value=panelId;el('teamForm').hidden=panelId!==ownId;
  await syncOffers();signed=true;el('account').textContent=email;el('responsible').textContent=name||email;
  selectDay(storeDate);history.replaceState(null,'',location.pathname+'#painel');gate('app');
 }
@@ -397,7 +392,6 @@ el('retryConnection').onclick=()=>location.reload();
 document.addEventListener('visibilitychange',refresh);
 window.addEventListener('focus',refresh);
 setInterval(refresh,30000);
-el('workspace').onchange=async()=>{const previous=panelId;panelId=el('workspace').value;try{await syncOffers();localStorage.setItem('painel.ativo',panelId);selectDay(storeDate);el('teamForm').hidden=panelId!==ownId}catch(err){panelId=previous;el('workspace').value=previous;el('importFeedback').textContent=err.message}};
 el('resetOpen').onclick=()=>{el('resetConfirmation').value='';el('resetNotice').textContent='';el('resetDialog').showModal()};
 el('resetCancel').onclick=()=>el('resetDialog').close();
 el('resetForm').onsubmit=async event=>{
@@ -415,9 +409,6 @@ el('resetForm').onsubmit=async event=>{
  }catch(err){el('resetNotice').textContent=err.message}
  finally{resetInProgress=false;el('resetSubmit').disabled=el('resetCancel').disabled=false}
 };
-el('teamOpen').onclick=()=>{el('teamMsg').textContent=panelId===ownId?'Seu colega poderá consultar e importar Programadas neste painel.':'Você está em um painel compartilhado.';el('team').showModal()};
-el('teamClose').onclick=()=>el('team').close();
-el('teamForm').onsubmit=async event=>{event.preventDefault();try{await api('equipe',{username:el('teamUsername').value});el('teamMsg').textContent='Painel compartilhado. Seu colega já pode acessá-lo ao entrar novamente.'}catch(err){el('teamMsg').textContent=err.message}};
 authMode(location.hash==='#cadastro');start();
 </script><!-- PDF.js license
 
