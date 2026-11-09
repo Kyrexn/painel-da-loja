@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:4,android:4};
+const version={web:5,android:5};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
@@ -27,7 +27,7 @@ function clean(row){
 async function run(req,env){
  const url=new URL(req.url),path=url.pathname,db=env.DB;
  if(path==="/app.apk")return new Response(Uint8Array.from(atob(APK),c=>c.charCodeAt(0)),{headers:{"content-type":"application/vnd.android.package-archive","content-disposition":"attachment; filename=Painel-da-loja.apk"}});
- if(["/","/entrar","/cadastro","/conectar"].includes(path))return new Response(HTML,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff","referrer-policy":"same-origin"}});
+ if(["/","/index.html","/entrar","/cadastro","/conectar"].includes(path))return new Response(HTML,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff","referrer-policy":"same-origin"}});
  if(path==="/versao")return send({...version,today:today()});
  if(!path.startsWith("/api/"))return fail(404,"Página não encontrada.");
  const code=req.headers.get("user-agent")?.match(/LojaAndroid\/(\d+)/);

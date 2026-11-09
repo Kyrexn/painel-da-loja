@@ -130,7 +130,7 @@ el('print').onclick=()=>window.GondolaAndroid?window.GondolaAndroid.printList():
 
 let savedOffers=[], storeDate=localKey(new Date()), signed=false;
 const preview=el('reviewRows');
-const webVersion=4;
+const webVersion=5;
 const service='https://painel-programadas-loja.opencord2.chatgpt.site';
 let sessionToken=sessionStorage.getItem('painel.sessao')||'';
 let panelId='', ownId='';
@@ -372,14 +372,24 @@ el('signOut').onclick=async()=>{
  try{await api('sair',{});sessionStorage.removeItem('painel.sessao');signed=false;location.hash='entrar';location.reload()}catch(err){el('importFeedback').textContent=err.message}
 };
 el('updateNow').onclick=async()=>{
+ const button=el('updateNow');button.disabled=true;button.textContent='Verificando…';
  try{
-  const info=await (await timedFetch(service+'/versao',{cache:'no-store'})).json();
+  const info=await (await timedFetch(service+'/versao?check='+Date.now(),{cache:'no-store'})).json();
   const mobile=Number(navigator.userAgent.match(/LojaAndroid\/(\d+)/)?.[1]||0);
-  if(mobile&&mobile<info.android&&window.GondolaAndroid){GondolaAndroid.updateApp();return}
-  if(window.GondolaAndroid?.refreshInterface){window.GondolaAndroid.refreshInterface();return}
-  location.reload();
- }catch{el('updateNote').textContent='Confira sua conexão e tente novamente.'}
+  if(mobile&&mobile<info.android&&window.GondolaAndroid){
+   el('updateNote').textContent='Aguarde o download. Quando o Android abrir o instalador, toque em Atualizar.';
+   GondolaAndroid.updateApp();return;
+  }
+  el('updateNote').textContent='Abrindo a versão atual do painel…';
+  const target=new URL('index.html',location.href);
+  target.searchParams.set('painel_version',String(info.web));
+  target.searchParams.set('atualizar',String(Date.now()));
+  target.hash=location.hash;
+  location.replace(target.href);
+ }catch(err){el('updateNote').textContent='Não foi possível atualizar. Confira sua conexão e tente novamente.'}
+ finally{button.disabled=false;button.textContent='Atualizar agora'}
 };
+window.nativeUpdateStatus=(message)=>{el('updateNote').textContent=message};
 el('retryConnection').onclick=()=>location.reload();
 document.addEventListener('visibilitychange',refresh);
 window.addEventListener('focus',refresh);

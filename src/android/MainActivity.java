@@ -1,5 +1,7 @@
 package br.loja.painel;
 import android.app.Activity;
+import android.app.AlertDialog;
+import org.json.JSONObject;
 import android.content.*;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -112,9 +114,13 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==401&&pending!=null){Uri uri=result==RESULT_OK&&data!=null?data.getData():null;pending.onReceiveValue(uri==null?null:new Uri[]{uri});pending=null;}
-        if(request==402&&getPackageManager().canRequestPackageInstalls())downloadUpdate();
+        if(request==402){
+            if(getPackageManager().canRequestPackageInstalls())downloadUpdate();
+            else updateFailure("Autorize a opção Permitir desta fonte para instalar a atualização.");
+        }
+        if(request==403)updateStatus(result==RESULT_OK?"Atualização instalada. Abra o aplicativo novamente.":"A instalação foi cancelada ou não foi concluída. Toque em Atualizar agora para tentar novamente.");
     }
-    private final class Bridge {
+    public final class Bridge {
         @JavascriptInterface public void ready(){runOnUiThread(()->{if(browser!=null&&sameOrigin(browser.getUrl()))loader.setVisibility(View.GONE);});}
         @JavascriptInterface public void refreshInterface(){runOnUiThread(()->{
             if(browser==null||!sameOrigin(browser.getUrl()))return;
@@ -136,7 +142,7 @@ public final class MainActivity extends Activity {
         });}
     }
     private synchronized void cacheInterface()throws IOException{
-        HttpsURLConnection connection=(HttpsURLConnection)new URL(origin+"/index.html?app="+version).openConnection();
+        HttpsURLConnection connection=(HttpsURLConnection)new URL(origin+"/index.html?app="+version+"&fresh="+System.currentTimeMillis()).openConnection();
         connection.setConnectTimeout(8000);connection.setReadTimeout(12000);connection.setUseCaches(false);
         connection.setInstanceFollowRedirects(false);
         try{
@@ -158,23 +164,42 @@ public final class MainActivity extends Activity {
         new Thread(()->{
             HttpsURLConnection connection=null;
             try{
-                URL url=new URL(origin+"/Painel-da-loja.apk");
+                URL url=new URL(origin+"/Painel-da-loja.apk?fresh="+System.currentTimeMillis());
                 connection=(HttpsURLConnection)url.openConnection();connection.setConnectTimeout(10000);connection.setReadTimeout(30000);
                 connection.setInstanceFollowRedirects(false);
 
-                if(connection.getResponseCode()!=200)throw new IOException();
+                if(connection.getResponseCode()!=200)throw new IOException("O servidor não entregou o pacote.");
                 File file=new File(getCacheDir(),"update.apk");
                 try(InputStream in=connection.getInputStream();FileOutputStream out=new FileOutputStream(file)){
-                    byte[] buf=new byte[16384];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
+                    byte[] buf=new byte[16384];int n;long total=0;
+                    while((n=in.read(buf))!=-1){out.write(buf,0,n);total+=n;if(total>50000000)throw new IOException("Pacote maior que o esperado.");}
                 }
                 android.content.pm.PackageInfo pkg=getPackageManager().getPackageArchiveInfo(file.getPath(),0);
-                if(pkg==null||!getPackageName().equals(pkg.packageName)||pkg.getLongVersionCode()<=version)throw new IOException();
+                if(pkg==null||!getPackageName().equals(pkg.packageName))throw new IOException("O pacote recebido é inválido.");
+                if(pkg.getLongVersionCode()<=version)throw new IOException("O servidor enviou uma versão que já está instalada.");
                 runOnUiThread(()->{
-                    try{startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(UpdateFile.APK,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));}
-                    catch(ActivityNotFoundException e){Toast.makeText(this,"Instalador indisponível.",Toast.LENGTH_LONG).show();}
+                    try{
+                        Intent install=new Intent(Intent.ACTION_INSTALL_PACKAGE)
+                            .setDataAndType(UpdateFile.APK,"application/vnd.android.package-archive")
+
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            .putExtra(Intent.EXTRA_RETURN_RESULT,true);
+                        install.setClipData(ClipData.newRawUri("Atualização",UpdateFile.APK));
+                        startActivityForResult(install,403);
+                        updateStatus("Download concluído. Confirme a atualização no instalador do Android.");
+                    }catch(ActivityNotFoundException e){updateFailure("O instalador do Android não está disponível.");}
                 });
-            }catch(Exception e){runOnUiThread(()->Toast.makeText(this,"Falha na atualização. Confira o servidor e tente novamente.",Toast.LENGTH_LONG).show());}
+            }catch(Exception e){runOnUiThread(()->updateFailure(e.getMessage()==null?"Confira a conexão e tente novamente.":e.getMessage()));}
             finally{if(connection!=null)connection.disconnect();runOnUiThread(()->updating=false);}
         }).start();
+    }
+    private void updateStatus(String message){
+        if(browser!=null&&sameOrigin(browser.getUrl()))browser.evaluateJavascript("window.nativeUpdateStatus && window.nativeUpdateStatus("+JSONObject.quote(message)+")",null);
+    }
+    private void updateFailure(String message){
+        updateStatus(message);
+        new AlertDialog.Builder(this).setTitle("Atualização não concluída").setMessage(message)
+            .setPositiveButton("Tentar novamente",(dialog,which)->downloadUpdate())
+            .setNegativeButton("Fechar",null).show();
     }
 }
