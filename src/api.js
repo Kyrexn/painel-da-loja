@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const version={web:2,android:2};
+const version={web:2,android:3};
 const hex=bytes=>Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,"0")).join("");
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const digest=async str=>hex(await crypto.subtle.digest("SHA-256",enc.encode(str)));
