@@ -217,7 +217,11 @@ function readLabel(tokens){
  const name=textLines.slice(1).filter(line=>!/(EXCLUSIVO|MEMBROS|CLUBZ)/i.test(line)).find(line=>line.trim()&&!/\b(DE|POR|EAN|VÁLIDO|ATÉ)\b|R\$|^\d+,/i.test(line))||'';
  const printed=dateBR(all.match(/\bEAN\s*:?\s*\d{8,14}\s*[-–]\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]);
  const start=dateBR(all.match(/V[ÁA]LIDO\s+DE\s*(\d{2}\/\d{2}\/\d{4})/i)?.[1]);
- return {name,ean,end,price,printed,start};
+ const de=all.match(/\bDE\s*:\s*(?:R\$\s*)?(\d+)\s*,\s*(\d{2})(?!\d)/i);
+ const original=de?de[1]+','+de[2]:'';
+ const condition=/CLUBZ/i.test(all)?'Exclusivo para membros Clubz':'';
+ const notes=/ENQUANTO\s+DURAREM\s+OS\s+ESTOQUES/i.test(all)?'Enquanto durarem os estoques':'';
+ return {name,ean,end,price,original,printed,start,condition,notes};
 }
 function pageOffers(tokens,page){
  const headers=tokens.filter(t=>/^DESCONTO$/i.test(t.s));
@@ -243,12 +247,12 @@ function pageOffers(tokens,page){
  return rows;
 }
 function reviewRow(data={}){
- const row=document.createElement('fieldset');row.dataset.page=data.page||'';row.dataset.start=data.start||'';row.dataset.printed=data.printed||'';
+ const row=document.createElement('fieldset');row.dataset.page=data.page||'';
  const legend=document.createElement('legend');legend.textContent=[data.page?'Página '+data.page:'Oferta manual',data.note].filter(Boolean).join(' · ');row.append(legend);
- for(const [key,label,type] of [['name','Produto','text'],['end','Válido até','date'],['ean','EAN','text'],['price','Preço promocional (R$)','text']]){
+ for(const [key,label,type] of [['name','Produto','text'],['end','Válido até','date'],['ean','EAN','text'],['price','Preço promocional (R$)','text'],['original','Preço original (R$)','text'],['start','Início da promoção','date'],['printed','Data de impressão','date'],['condition','Condição da promoção','text'],['notes','Observação da etiqueta','text']]){
   const wrapper=document.createElement('label'),input=document.createElement('input');
   wrapper.textContent=label;input.name=key;input.type=type;input.value=data[key]||'';
-  input.required=key==='name'||key==='end';if(key==='price'){input.inputMode='decimal';input.pattern='[0-9]+([,.][0-9]{2})?'}
+  input.required=key==='name'||key==='end';if(key==='price'||key==='original'){input.inputMode='decimal';input.pattern='[0-9]+([,.][0-9]{2})?'}
   wrapper.append(input);row.append(wrapper);
  }
  const remove=document.createElement('button');remove.type='button';remove.textContent='Remover linha';remove.onclick=()=>row.remove();row.append(remove);preview.append(row);
@@ -292,8 +296,8 @@ el('reviewForm').onsubmit=async event=>{
  event.preventDefault();
  const records=Array.from(preview.children,row=>{
   const fields=Object.fromEntries(Array.from(row.querySelectorAll('input'),i=>[i.name,i.value.trim()]));
-  fields.price=fields.price?Number(fields.price.replace(',','.')).toFixed(2).replace('.',','):'';
-  return {...fields,page:row.dataset.page,start:row.dataset.start,printed:row.dataset.printed,source,key:JSON.stringify([fields.ean||fields.name.toLocaleUpperCase('pt-BR'),row.dataset.start,fields.end,fields.price])};
+  for(const key of ['price','original'])fields[key]=fields[key]?Number(fields[key].replace(',','.')).toFixed(2).replace('.',','):'';
+  return {...fields,page:row.dataset.page,source,key:JSON.stringify([fields.ean||fields.name.toLocaleUpperCase('pt-BR'),fields.start,fields.end,fields.price])};
  });
  if(!records.length||records.some(r=>!r.name)){el('readStatus').textContent='Inclua ao menos uma oferta e confira o nome de cada produto.';return}
  const eligible=records.filter(r=>r.end>=storeDate);

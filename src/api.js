@@ -14,11 +14,14 @@ const cookie=(value,age)=>"painel="+value+"; Path=/; HttpOnly; Secure; SameSite=
 function clean(row){
  if(!row||typeof row!=="object")throw new Error("Linha inválida.");
  const data={};
- for(const [key,max] of Object.entries({name:400,ean:14,price:20,end:10,start:10,printed:10,source:300,page:8})){
+ for(const [key,max] of Object.entries({name:400,ean:14,price:20,original:20,condition:160,notes:500,end:10,start:10,printed:10,source:300,page:8})){
   const v=row[key]??"";if(typeof v!=="string"||v.length>max)throw new Error("Confira "+key+".");data[key]=v.trim();
  }
  if(!data.name||!/^\d{4}-\d{2}-\d{2}$/.test(data.end)||new Date(data.end+"T12:00Z").toISOString().slice(0,10)!==data.end)throw new Error("Informe produto e data válida.");
- if(data.price&&!/^\d{1,10},\d{2}$/.test(data.price))throw new Error("Preço inválido.");
+ for(const key of ['price','original'])if(data[key]&&!/^\d{1,10},\d{2}$/.test(data[key]))throw new Error("Preço inválido.");
+ for(const key of ['start','printed'])if(data[key]&&(!/^\d{4}-\d{2}-\d{2}$/.test(data[key])||new Date(data[key]+"T12:00Z").toISOString().slice(0,10)!==data[key]))throw new Error("Data inválida.");
+ if(data.start&&data.start>data.end)throw new Error("O início deve ser anterior ao término.");
+ if(data.ean&&!/^\d{8,14}$/.test(data.ean))throw new Error("EAN inválido.");
  return data;
 }
 async function run(req,env){
@@ -88,7 +91,7 @@ async function run(req,env){
    if(!rows.length)return fail(400,"Essas promoções já terminaram.");
    const stmts=[];for(let i=0;i<rows.length;i+=20){
     const chunk=rows.slice(i,i+20);
-    stmts.push(db.prepare("INSERT OR REPLACE INTO offers VALUES "+chunk.map(()=>"(?,?,?,?)").join(",")).bind(...chunk.flatMap(r=>[owner,JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price]),r.end,JSON.stringify(r)])));
+    stmts.push(db.prepare("INSERT OR REPLACE INTO offers VALUES "+chunk.map(()=>"(?,?,?,?)").join(",")).bind(...chunk.flatMap(r=>[owner,JSON.stringify([r.ean||r.name.toUpperCase(),r.start,r.end,r.price,...(r.condition?[r.condition]:[])]),r.end,JSON.stringify(r)])));
    }await db.batch(stmts);
   }
   const {results}=await db.prepare("SELECT data FROM offers WHERE owner=? AND end>=? ORDER BY end,id").bind(owner,day).all();
